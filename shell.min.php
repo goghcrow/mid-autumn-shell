@@ -191,7 +191,7 @@ class Shell
 	}
 
 	// @see http://php.net/manual/zh/function.html-entity-decode.php#104617
-	public function htmlEntityDecode($cmd) {
+	public static function htmlEntityDecode($cmd) {
 		if(function_exists('mb_convert_encoding')) {
 			return preg_replace_callback("/(&#[0-9]+;)/", function($m) {
 				return mb_convert_encoding($m[1], "UTF-8", "HTML-ENTITIES");
